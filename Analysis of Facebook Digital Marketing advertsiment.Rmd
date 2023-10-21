@@ -1,0 +1,351 @@
+---
+title: "Analysis of Facebook Digital Marketing advertsiment"
+author: "Ibeh Amaka"
+date: '2023-10-21'
+output:
+  word_document: default
+  html_document: default
+---
+This is a dataset that was retrived from kaggel on Measuring Facebook Advertising ROI.
+Objectives:
+Company wants to maximise the amount of revenue, while minimising the amount it spends on advertising.
+
+Firstly, we load the packages needed
+```{r}
+library(tidyr)
+library(dplyr)
+library(readxl)
+library(readr)
+```
+Load the dataset
+
+```{r}
+data <- read_csv("C:/Users/ibeha/OneDrive/Desktop/MY R DATASET/Facebook ad dataset/KAG_conversion_data.csv")
+glimpse(data)
+```
+The documenation describes the columns in the data as follows:
+
+1.) ad_id: unique ID for each ad.
+
+2.) xyz_campaign_id: an ID associated with each ad campaign of XYZ company.
+
+3.) fb_campaign_id: an ID associated with how Facebook tracks each campaign.
+
+4.) age: age of the person to whom the ad is shown.
+
+5.) gender: gender of the person to whom the add is shown
+
+6.) interest: a code specifying the category to which the person’s interest belongs (interests are as mentioned in the person’s Facebook public profile).
+
+7.) Impressions: the number of times the ad was shown.
+
+8.) Clicks: number of clicks on for that ad.
+
+9.) Spent: Amount paid by company xyz to Facebook, to show that ad.
+
+10.) Total conversion: Total number of people who enquired about the product after seeing the ad.
+
+11.) Approved conversion: Total number of people who bought the product after seeing the ad.
+
+We see age is in character data type, and not having a specific numbers for age, so I will take the mean of age. in addition, I will create a copy of the dataset set. 
+```{r}
+unique(data$age)
+```
+
+
+```{r}
+new_data <- data
+new_data$age[new_data$age == "30-34"] <- 32
+new_data$age[new_data$age == "35-39"] <- 37
+new_data$age[new_data$age == "40-44"] <- 42
+new_data$age[new_data$age == "45-49"] <- 47
+```
+
+Convert the variables to integers
+```{r}
+new_data$age <- as.integer(new_data$age)
+str(new_data$age)
+```
+
+change gender to 1 and 0
+
+```{r}
+new_data$gender[new_data$gender == "M"] <- 0
+new_data$gender[new_data$gender == "F"] <- 1
+new_data$gender <- as.integer(new_data$gender)
+glimpse(new_data)
+```
+abbreviate some variable name
+```{r pressure, echo=FALSE}
+new_data <- new_data %>%
+ rename(xyzCampId = xyz_campaign_id, fbCampId = fb_campaign_id, impr = Impressions,
+         conv = Total_Conversion, appConv = Approved_Conversion)
+```
+
+```{r}
+library(heatmaply)
+library(corrplot)
+dataMatNorm <- as.matrix(normalize(new_data, method = "standardize"))
+correlation_matrix <- cor(dataMatNorm)
+heatmap(dataMatNorm)
+corrplot(correlation_matrix, method = "number", col = colorRampPalette(c("white", "blue"))(10))
+
+```
+The results shows that there is a strong corrolation between impression and clicks, spents, conv and appconv.
+
+Lets talk about the terms use in this analysis for better understanding
+Click-through rate (CTR) is a metric used in online advertising and digital marketing to measure the effectiveness of an online advertising campaign or a specific advertisement. CTR is expressed as a percentage and represents the proportion of people who click on an ad or a specific link within a webpage, email, or other digital content, relative to the total number of people who were exposed to the ad (impressions) or had the opportunity to click (clicks).The formula to calculate CTR is:CTR=CTR=( Number of Clicks/ Number of Impressions or Opportunities)×100
+
+Cost Per Click (CPC) is a common digital advertising metric used by advertisers and marketers to measure the cost-effectiveness of online advertising campaigns, particularly in pay-per-click (PPC) advertising models. CPC represents the average cost that an advertiser pays each time a user clicks on their ad. It is a crucial metric for assessing the efficiency and return on investment (ROI) of online advertising efforts.
+CPC= Total Cost of Campaign/ Total Number of Click
+
+Conversion Rate (CR) is a key performance indicator (KPI) used in marketing and e-commerce to measure the effectiveness of a marketing campaign, website, or online sales funnel. It represents the percentage of visitors or users who take a desired action, referred to as a "conversion," out of the total number of visitors or users who had the opportunity to take that action. Conversion Rate is expressed as a percentage.
+
+The formula to calculate Conversion Rate is:
+  CR=( Number of Conversions//Total Number of Visitors or Users)×100 
+
+Create the additional KPIs with dplyr create the CTR and CPC figures
+```{r}
+new_data <- new_data %>%
+  mutate(CTR = ((Clicks/impr)* 100), CPC = Spent/Clicks)
+#round to 4 decemail place
+new_data$CTR <- round(new_data$CTR, 4)
+new_data$CPC <- round(new_data$CPC, 2)
+```
+
+```{r}
+# create trimmed dataset
+dataTfTrim <- new_data %>%
+  select(CTR, CPC, appConv, conv, impr, Spent, Clicks)
+
+# omit missing values, normalise data, calculate correlations and plot heatmap
+heatmap(cor(normalize(na.omit(dataTfTrim))))
+
+```
+
+```{r}
+# Install and load reshape2 package
+library(reshape2)
+# creating correlation matrix
+corr_mat <- round(cor(dataTfTrim),2)
+# reduce the size of correlation matrix
+melted_corr_mat <- melt(corr_mat)
+#remove NA
+melted_corr_mat <- na.omit(melted_corr_mat)
+head(melted_corr_mat)
+```
+
+```{r}
+library(ggplot2)
+ggplot(data = melted_corr_mat, aes(x=Var1, y=Var2,
+                                   fill=value)) + 
+  geom_tile() +
+  geom_text(aes(Var2, Var1, label = value), 
+            color = "black", size = 4)
+```
+
+From our broad overview of the data, we can see that the more we spend, the more clicks and conversions we seem to get. That's quite reassuring to know, but doesn't really give us the 'actionable insight' we were looking for.
+
+
+For our next stage in the analysis, we'll look at a specific campaign in more detail and see what we can pull out of it. First of all, let's choose a campaign, the one on which we regularly spend the most money and regularly get the most conversions Group by Campaign Name and calculate total spending and conversions
+
+```{r}
+campaign_summary <- new_data %>%
+  group_by(xyzCampId) %>%
+  summarise(TotalSpending = sum(Spent, na.rm = TRUE),
+            TotalConversions = sum(appConv, na.rm = TRUE))
+
+```
+
+Find the campaign with the highest spending and the most conversions
+```{r}
+top_campaign <- campaign_summary %>%
+  filter(TotalSpending == max(TotalSpending) & TotalConversions == max(TotalConversions))
+print(top_campaign)
+
+```
+we can see that the 1178 has the most spending and impression
+
+we use our prevous names
+```{r}
+data1178 <- data %>%
+  rename(xyzCampId = xyz_campaign_id, fbCampId = fb_campaign_id, impr = Impressions,
+         conv = Total_Conversion, appConv = Approved_Conversion) %>%
+  filter(xyzCampId == 1178)
+
+```
+check for missing values
+
+```{r}
+library(DataExplorer)
+plot_missing(data1178)
+
+```
+Non is missing, Let's look at the distributions of our data, variable by variable:
+
+```{r}
+
+options(repr.plot.width=4, repr.plot.height=4)
+plot_bar(data1178)
+
+options(repr.plot.width=8, repr.plot.height=4)
+plot_histogram(data1178)
+
+```
+Lets see if our Return on Advertising Spend (ROAS) or the money spent is generating a revenue
+Return on Advertising Spend (ROAS) is a metric used in digital marketing and advertising to measure the effectiveness and efficiency of advertising campaigns. It quantifies the revenue generated for each dollar spent on advertising. ROAS is typically expressed as a ratio or percentage and is calculated using the following formula:
+
+ROAS = (Revenue Generated from Advertising) / (Cost of Advertising)
+
+An enquiry (Total conversion, conv) is worth £5, and a sale (Approved conversion, appConv),is worth £100. We can now create our conversion value-based variables.
+```{r}
+data1178 <- data1178 %>%
+  mutate(totConv = conv + appConv,
+         conVal = conv * 5,
+         appConVal = appConv * 100) %>%
+  mutate(totConVal = conVal + appConVal) %>%
+  mutate(costPerCon = round(Spent / totConv, 2),
+        ROAS = ifelse(Spent == 0, 0, round(totConVal / Spent, 2)))
+```
+
+```{r}
+summary(data1178$ROAS)
+```
+ROAS Greater than 1: If the ROAS is greater than 1, it indicates that for every dollar spent on advertising, the campaign generated more than one dollar in revenue. This is generally considered a positive outcome, indicating a profitable campaign.
+
+The mean of ROAS is 3.685 this means every dollar spent on advertisement, the campeign generated 3.685 revenue 
+
+```{r}
+high_ROAS_campaigns <- data1178 %>%
+  filter(ROAS > 2)
+high_ROAS_campaigns
+```
+We have been working on the 1178 has the most spending and impression, we can also see if others too has the  high ROAS or less so we can decide to stop that perticular add
+
+```{r}
+library(DataExplorer)
+plot_missing(new_data)
+
+```
+
+```{r}
+unique(data$xyz_campaign_id)
+
+all_data <- new_data %>% 
+  mutate(totConv = conv + appConv,
+                conVal = conv * 5,
+                appConVal = appConv * 100) %>%
+  mutate(totConVal = conVal + appConVal) %>%
+  mutate(costPerCon = round(Spent / totConv, 2),
+         ROAS = ifelse(Spent == 0, 0, round(totConVal / Spent, 2)))
+
+```
+
+```{r}
+kk = all_data %>% 
+  filter(xyzCampId == 916) %>% 
+  summarise(mean_ros = mean(ROAS))
+kk
+
+kk2 = all_data %>% 
+  filter(xyzCampId == 936) %>% 
+  summarise(mean_ros = mean(ROAS))
+kk2
+```
+
+we see that though we spend less and have low impressions on the add 916 and 936 this shows that mean of add 916 is 14.3 while that of 936 is 12.9. This means that it has larger returns than add 1178 even if it has the highest impressions and spenings
+
+
+Our objective here is to find the cost of impressions in other to increase brand awareness, now lets work with our data1178
+
+Cost Per Mille (CPM). This number is the cost of one thousand impressions. 
+
+```{r}
+data1178 <- data1178 %>%
+  mutate(CPM = round((Spent / impr) * 1000, 2))
+sum(data1178$CPM)
+```
+The result, 156.46, represents the total CPM for all the data in your dataset. This means that, on average, you are spending $156.46 to reach one thousand impressions across all the campaigns or data points in your dataset. This metric is useful for understanding the efficiency of your advertising spend in terms of impressions generated for a given cost. Lower CPM values typically indicate more efficient advertising spending.
+```{r}
+options(repr.plot.width=6, repr.plot.height=3)
+ggplot(data1178, aes(Spent, totConv)) + geom_point() + geom_smooth(method = "lm") +
+  labs(x = "Amount spent on campaign", y = "Total number of conersions")
+ggplot(data1178, aes(Spent, totConVal)) + geom_point() + geom_smooth(method = "lm") +
+  labs(x = "Amount spent on campaign", y = "Total value of conversions")
+
+options(repr.plot.width=4, repr.plot.height=3)
+ggplot(data1178, aes(gender, ROAS)) + geom_boxplot() + scale_y_log10()
+```
+The data look quite symmetrical with a log-transformed axis, but without the log-transformation, it doesn't fit the normal distribution, so we'll look to see if this difference is significant using a non-parametric test:
+```{r}
+wilcox.test(ROAS ~ gender, data=data1178)
+```
+The small p-value (0.0001523) indicates that there is strong evidence to reject the null hypothesis.
+Therefore, you can conclude that there is a statistically significant difference in ROAS between the two gender groups.
+```{r}
+options(repr.plot.width=8, repr.plot.height=3)
+ggplot(data1178, aes(as.factor(interest), Clicks)) + geom_boxplot() +
+  labs(x = "Interest Identifier", y = "Number of Clicks")
+
+options(repr.plot.width=8, repr.plot.height=3)
+data1178 %>%
+  ggplot(aes(as.factor(interest), ROAS)) + geom_boxplot() + scale_y_log10() +
+  labs(x = "Interest Identifier", y = "ROAS")
+
+```
+
+```{r}
+data1178 %>%
+  select(interest, ROAS, Clicks) %>%
+  group_by(interest) %>%
+  filter(ROAS != 'Inf') %>%
+  summarise(medianROAS = round(median(ROAS) ,2), 
+            meanROAS = round(mean(ROAS), 2), clicks = sum(Clicks)) %>%
+  arrange(desc(meanROAS)) %>%
+  head(n = 10)
+```
+From the result above, we can see that people that fall under interest 104, 101, and 102, has the highest ROAS. if we can find a way to target those group of people it will be beneficial to us. 
+
+Lets filter the intrest based on the number of clicks by gender
+```{r}
+options(repr.plot.width=8, repr.plot.height=3)
+data1178 %>%
+  filter(interest == 101 | interest == 15 | interest == 21) %>%
+  ggplot(aes(x = as.factor(interest), y = ROAS, fill = gender)) + geom_boxplot() + scale_y_log10() +
+  labs(x = 'Interest ID', y = 'ROAS')
+```
+
+```{r}
+data1178 %>%
+  select(interest, gender, ROAS, Clicks) %>%
+  group_by(interest, gender) %>%
+  filter(ROAS != 'Inf', interest == 101 | interest == 15 | interest == 21) %>%
+  summarise(medianROAS = round(median(ROAS), 2),
+            meanROAS = round(mean(ROAS) ,2), clicks = sum(Clicks)) %>%
+  arrange(desc(meanROAS))
+```
+from the result above we can see that males has more ROAS returns than females
+
+Analysis by age
+We've been able to break apart this campaign by interest and gender, with each split allowing us to pull out groups with the highest ROAS. What about the age variable though, 
+we haven't used that yet, so let's see if we can be even more targeted:
+```{r}
+options(repr.plot.width=8, repr.plot.height=4)
+data1178 %>%
+  filter(interest == 21 | interest == 15 & gender == 'M') %>%
+  group_by(age, interest) %>% 
+  ggplot(aes(x = as.factor(age), y = ROAS, fill = as.factor(interest))) + geom_boxplot() + scale_y_log10() +
+  labs(x = 'Age group', y = 'ROAS') + scale_fill_discrete(name="Interest\nID")
+
+```
+
+```{r}
+data1178 %>%
+  select(age, interest, gender, ROAS, Clicks) %>%
+  group_by(age, interest) %>%
+  filter(ROAS != 'Inf', interest == 21 | interest == 15, gender == 'M') %>%
+  summarise(medianROAS = round(median(ROAS), 2),
+            meanROAS = round(mean(ROAS) ,2), clicks = sum(Clicks)) %>%
+  arrange(desc(meanROAS))
+```
+Age 30-32 has the highest mean returns of ROAS
